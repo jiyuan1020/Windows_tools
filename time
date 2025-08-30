@@ -1,0 +1,95 @@
+# ====================================================================
+# === Privilege Elevation Check - Must be at the very top of the script ===
+# ====================================================================
+
+# Check if the current process is running with administrative privileges
+$is_admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+if (-not $is_admin) {
+    Write-Host "This script requires administrator privileges to run. Attempting to relaunch..." -ForegroundColor Yellow
+    
+    # Relaunch the script and trigger a UAC elevation prompt
+    Start-Process -FilePath powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+    
+    # Exit the current, non-elevated process
+    Exit
+}
+
+# --- From here on, the code will run with administrative privileges ---
+Write-Host "The script has successfully obtained administrator privileges!" -ForegroundColor Green
+Start-Sleep -Seconds 1 # Pause to let the user see the success message
+
+# ====================================================================
+# === Time Synchronization Code ===
+# ====================================================================
+
+function Sync-WindowsTime {
+    param (
+        [string]$NtpServer = "ntp.aliyun.com"
+    )
+
+    Write-Host "Setting time server to: $NtpServer" -ForegroundColor Cyan
+
+    try {
+        # Stop the Windows Time service
+        Write-Host "Stopping the Windows Time service..."
+        Stop-Service -Name "w32time" -Force -ErrorAction SilentlyContinue
+
+        # Configure the NTP server
+        w32tm /config /syncfromflags:manual /manualpeerlist:"$NtpServer" /reliable:yes
+
+        # Start the Windows Time service
+        Write-Host "Starting the Windows Time service..."
+        Start-Service -Name "w32time"
+        
+        # Force a time resynchronization
+        Write-Host "Forcing time synchronization..."
+        w32tm /resync /force
+        
+        # Check the synchronization status
+        Start-Sleep -Seconds 5
+        Write-Host "Synchronization complete. Current status:" -ForegroundColor Green
+        w32tm /query /status
+
+    } catch {
+        Write-Host "An error occurred during time synchronization: $_" -ForegroundColor Red
+        return
+    }
+
+    Write-Host "Time synchronization operation is complete." -ForegroundColor Green
+}
+
+# ====================================================================
+# === Main Menu ===
+# ====================================================================
+
+while ($true) {
+    Clear-Host
+    Write-Host "========== Windows Time Synchronization Menu ==========" -ForegroundColor Cyan
+    Write-Host "1. Sync time to Aliyun NTP server"
+    Write-Host "2. Sync time to Windows default NTP server"
+    Write-Host "3. Exit"
+    Write-Host "======================================================" -ForegroundColor Cyan
+    
+    $choice = Read-Host "Please enter your choice (1, 2, or 3)"
+
+    switch ($choice) {
+        "1" {
+            Sync-WindowsTime -NtpServer "ntp.aliyun.com"
+            Read-Host "Press Enter to continue..."
+        }
+        "2" {
+            Sync-WindowsTime -NtpServer "time.windows.com"
+            Read-Host "Press Enter to continue..."
+        }
+        "3" {
+            Write-Host "Exiting script. Goodbye!"
+            Start-Sleep -Seconds 2
+            return
+        }
+        default {
+            Write-Host "Invalid choice. Please enter 1, 2, or 3." -ForegroundColor Red
+            Start-Sleep -Seconds 2
+        }
+    }
+}

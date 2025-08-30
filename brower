@@ -1,0 +1,576 @@
+# ====================================================================
+# === Privilege Elevation Check - Must be at the very top of the script ===
+# ====================================================================
+
+# Check if the current user is an administrator
+$is_admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+if (-not $is_admin) {
+    Write-Host "This script needs administrator privileges to run correctly. Attempting to relaunch with elevation..." -ForegroundColor Yellow
+
+    # Relaunch the script with elevated privileges and exit the current process
+    Start-Process -FilePath powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+
+    # Exit the current, non-admin session
+    Exit
+}
+
+# --- From here on, the code runs with administrative privileges ---
+Write-Host "Script successfully launched with administrator privileges." -ForegroundColor Green
+Start-Sleep -Seconds 1 # Pause for the user to see the confirmation
+
+# --- From here on, the code will run with administrative privileges ---
+Write-Host "The script has successfully obtained administrator privileges!" -ForegroundColor Green
+Start-Sleep -Seconds 1 # Pause to allow the user to see the success message
+# Set console title
+$Host.UI.RawUI.WindowTitle = "Browser Policy Management Menu"
+
+# --- Registry Data Content (Embedded as Strings) ---
+$reg_disable_edge_chorme_printing = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome]
+"DisablePrintPreview"=dword:00000001
+"PrintingEnabled"=dword:00000000
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge]
+"PrintingEnabled"=dword:00000000
+"@
+
+$reg_enable_edge_chorme_printing = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome]
+"DisablePrintPreview"=dword:00000000
+"PrintingEnabled"=dword:00000001
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge]
+"PrintingEnabled"=dword:00000001
+"@
+
+#Chrome_all_exit
+$reg_ChromeEnableAllClearing = @"
+Windows Registry Editor Version 5.00
+
+; Google Chrome 退出时清理所有指定的数据类型
+; 清理列表包括: 自动填充、浏览历史、缓存、Cookie、下载历史、托管应用数据、密码和网站设置
+
+; 启用退出时清理功能
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome]
+"ClearBrowsingDataOnExit"=dword:00000001
+
+; 指定要清理的所有数据类型
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\ClearBrowsingDataOnExitList]
+"1"="autofill"
+"2"="browsing_history"
+"3"="cached_images_and_files"
+"4"="cookies_and_other_site_data"
+"5"="download_history"
+"6"="hosted_app_data"
+"7"="password_signin"
+"8"="site_settings"
+"@
+
+#Edge_all_exit
+$reg_EdgeEnableAllClearing = @"
+Windows Registry Editor Version 5.00
+
+; Microsoft Edge 退出时清理所有指定的数据类型
+; 清理列表包括: 自动填充、浏览历史、缓存、Cookie、下载历史、托管应用数据、密码和网站设置
+
+; 启用退出时清理功能
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge]
+"ClearBrowsingDataOnExit"=dword:00000001
+
+; 指定要清理的所有数据类型
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\ClearBrowsingDataOnExitList]
+"1"="autofill"
+"2"="browsing_history"
+"3"="cached_images_and_files"
+"4"="cookies_and_other_site_data"
+"5"="download_history"
+"6"="hosted_app_data"
+"7"="password_signin"
+"8"="site_settings"
+"@
+
+# Edge Autofill
+$reg_DisableEdgeAutofill = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge]
+"PasswordManagerEnabled"=dword:00000000
+"AutofillAddressEnabled"=dword:00000000
+"AutofillCreditCardEnabled"=dword:00000000
+"PaymentEnabled"=dword:00000000
+"@
+
+$reg_EnableEdgeAutofill = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge]
+"PasswordManagerEnabled"=-
+"AutofillAddressEnabled"=-
+"AutofillCreditCardEnabled"=-
+"PaymentEnabled"=-
+"@
+
+# Chrome Autofill
+$reg_DisableChromeAutofill = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome]
+"PasswordManagerEnabled"=dword:00000000
+"AutofillAddressEnabled"=dword:00000000
+"AutofillCreditCardEnabled"=dword:00000000
+"@
+
+$reg_EnableChromeAutofill = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome]
+"PasswordManagerEnabled"=-
+"AutofillAddressEnabled"=-
+"AutofillCreditCardEnabled"=-
+"@
+
+# Browser Screen Capture
+$reg_DisableScreenCapture = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome]
+"ScreenCaptureAllowed"=dword:00000000
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge]
+"ScreenCaptureAllowed"=dword:00000000
+"@
+
+$reg_EnableScreenCapture = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome]
+"ScreenCaptureAllowed"=-
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge]
+"ScreenCaptureAllowed"=-
+"@
+
+# Chrome detailed clearing rules on exit
+$reg_ChromeClearAutofill = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome]
+"ClearBrowsingDataOnExit"=dword:00000001
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\ClearBrowsingDataOnExitList]
+"1"="autofill"
+"@
+
+$reg_ChromeClearBrowsingHistory = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome]
+"ClearBrowsingDataOnExit"=dword:00000001
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\ClearBrowsingDataOnExitList]
+"1"="browsing_history"
+"@
+
+$reg_ChromeClearCachedImages = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome]
+"ClearBrowsingDataOnExit"=dword:00000001
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\ClearBrowsingDataOnExitList]
+"1"="cached_images_and_files"
+"@
+
+$reg_ChromeClearCookies = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome]
+"ClearBrowsingDataOnExit"=dword:00000001
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\ClearBrowsingDataOnExitList]
+"1"="cookies_and_other_site_data"
+"@
+
+$reg_ChromeClearDownloadHistory = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome]
+"ClearBrowsingDataOnExit"=dword:00000001
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\ClearBrowsingDataOnExitList]
+"1"="download_history"
+"@
+
+$reg_ChromeClearHostedAppData = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome]
+"ClearBrowsingDataOnExit"=dword:00000001
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\ClearBrowsingDataOnExitList]
+"1"="hosted_app_data"
+"@
+
+$reg_ChromeClearPasswordSignin = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome]
+"ClearBrowsingDataOnExit"=dword:00000001
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\ClearBrowsingDataOnExitList]
+"1"="password_signin"
+"@
+
+$reg_ChromeClearSiteSettings = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome]
+"ClearBrowsingDataOnExit"=dword:00000001
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\ClearBrowsingDataOnExitList]
+"1"="site_settings"
+"@
+
+$reg_ChromeDisableAllClearing = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome]
+"ClearBrowsingDataOnExit"=dword:00000000
+[-HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\ClearBrowsingDataOnExitList]
+"@
+
+# Edge detailed clearing rules on exit
+$reg_EdgeClearAutofill = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge]
+"ClearBrowsingDataOnExit"=dword:00000001
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\ClearBrowsingDataOnExitList]
+"1"="autofill"
+"@
+
+$reg_EdgeClearBrowsingHistory = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge]
+"ClearBrowsingDataOnExit"=dword:00000001
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\ClearBrowsingDataOnExitList]
+"1"="browsing_history"
+"@
+
+$reg_EdgeClearCachedImages = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge]
+"ClearBrowsingDataOnExit"=dword:00000001
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\ClearBrowsingDataOnExitList]
+"1"="cached_images_and_files"
+"@
+
+$reg_EdgeClearCookies = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge]
+"ClearBrowsingDataOnExit"=dword:00000001
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\ClearBrowsingDataOnExitList]
+"1"="cookies_and_other_site_data"
+"@
+
+$reg_EdgeClearDownloadHistory = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge]
+"ClearBrowsingDataOnExit"=dword:00000001
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\ClearBrowsingDataOnExitList]
+"1"="download_history"
+"@
+
+$reg_EdgeClearHostedAppData = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge]
+"ClearBrowsingDataOnExit"=dword:00000001
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\ClearBrowsingDataOnExitList]
+"1"="hosted_app_data"
+"@
+
+$reg_EdgeClearPasswordSignin = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge]
+"ClearBrowsingDataOnExit"=dword:00000001
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\ClearBrowsingDataOnExitList]
+"1"="password_signin"
+"@
+
+$reg_EdgeClearSiteSettings = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge]
+"ClearBrowsingDataOnExit"=dword:00000001
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\ClearBrowsingDataOnExitList]
+"1"="site_settings"
+"@
+
+$reg_EdgeDisableAllClearing = @"
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge]
+"ClearBrowsingDataOnExit"=dword:00000000
+[-HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\ClearBrowsingDataOnExitList]
+"@
+
+# --- Main Menu Item Configuration ---
+$MainMenuItems = @(
+    [pscustomobject]@{Name="Autofill Feature Management"; MenuFunction="Show-AutofillMenu"}
+    [pscustomobject]@{Name="Browser Screen Capture Control"; MenuFunction="Show-ScreenCaptureMenu"}
+    [pscustomobject]@{Name="Browser Printing Feature Control"; MenuFunction="Show-PrintingMenu"}
+    [pscustomobject]@{Name="Chrome Data Clearing Settings"; MenuFunction="Show-ChromeClearMenu"}
+    [pscustomobject]@{Name="Edge Data Clearing Settings"; MenuFunction="Show-EdgeClearMenu"}
+)
+
+# --- Import Registry Data Function ---
+function Import-RegData {
+    param(
+        [string]$regContent,
+        [string]$description
+    )
+
+    Write-Host "You have selected '$description'." -ForegroundColor Yellow
+    Write-Host "Do you confirm this action? (Type Y to confirm, any other key to cancel)" -ForegroundColor Yellow
+    $confirm = Read-Host "Please select [Y/N]"
+
+    if ($confirm.ToUpper() -eq 'Y') {
+        $tempFile = [System.IO.Path]::GetTempFileName() + ".reg"
+        
+        try {
+            $regContent | Out-File -FilePath $tempFile -Encoding Default
+            Start-Process -FilePath "C:\Windows\System32\reg.exe" -ArgumentList "import", "`"$tempFile`"" -Wait -NoNewWindow
+            Write-Host "Success] '$description' settings have been applied!" -ForegroundColor Green
+        } catch {
+            Write-Host "Error] An error occurred while importing the registry: $($_.Exception.Message)" -ForegroundColor Red
+        } finally {
+            if (Test-Path $tempFile) {
+                Remove-Item $tempFile
+            }
+        }
+    } else {
+        Write-Host "Operation cancelled." -ForegroundColor Yellow
+    }
+    
+    Write-Host "Press any key to return to the menu..."
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+}
+
+# --- Sub-menu Configurations and Functions ---
+function Show-AutofillMenu {
+    $MenuItems = @(
+        [pscustomobject]@{Name="Disable Edge Autofill"; RegContent=$reg_DisableEdgeAutofill; Description="Disable Edge Autofill"}
+        [pscustomobject]@{Name="Enable Edge Autofill"; RegContent=$reg_EnableEdgeAutofill; Description="Enable Edge Autofill"}
+        [pscustomobject]@{Name="Disable Chrome Autofill"; RegContent=$reg_DisableChromeAutofill; Description="Disable Chrome Autofill"}
+        [pscustomobject]@{Name="Enable Chrome Autofill"; RegContent=$reg_EnableChromeAutofill; Description="Enable Chrome Autofill"}
+
+    )
+    
+    while ($true) {
+        Clear-Host
+        Write-Host "--- Autofill Feature Management ---" -ForegroundColor Yellow
+        Write-Host ""
+        for ($i = 0; $i -lt $MenuItems.Count; $i++) {
+            Write-Host "        [$($i + 1)] $($MenuItems[$i].Name)" -ForegroundColor Cyan
+        }
+        Write-Host ""
+        Write-Host "        [B] Return to Main Menu" -ForegroundColor Red
+        Write-Host ""
+        
+        $choice = Read-Host "Please select an option"
+        
+        if ($choice.ToUpper() -eq 'B') { Show-MainMenu; break }
+        if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $MenuItems.Count) {
+            $selectedIndex = [int]$choice - 1
+            $selectedItem = $MenuItems[$selectedIndex]
+            Import-RegData -regContent $selectedItem.RegContent -description $selectedItem.Description
+        } else {
+            Write-Host "Invalid choice. Please try again." -ForegroundColor Red
+            Start-Sleep -Seconds 2
+        }
+    }
+}
+
+function Show-ScreenCaptureMenu {
+    $MenuItems = @(
+        [pscustomobject]@{Name="Disable Edge and Chrome Screen Capture"; RegContent=$reg_DisableScreenCapture; Description="Disable Edge and Chrome Screen Capture"}
+        [pscustomobject]@{Name="Enable Edge and Chrome Screen Capture"; RegContent=$reg_EnableScreenCapture; Description="Enable Edge and Chrome Screen Capture"}
+    )
+    
+    while ($true) {
+        Clear-Host
+        Write-Host "--- Browser Screen Capture Control ---" -ForegroundColor Yellow
+        Write-Host ""
+        for ($i = 0; $i -lt $MenuItems.Count; $i++) {
+            Write-Host "        [$($i + 1)] $($MenuItems[$i].Name)" -ForegroundColor Cyan
+        }
+        Write-Host ""
+        Write-Host "        [B] Return to Main Menu" -ForegroundColor Red
+        Write-Host ""
+        
+        $choice = Read-Host "Please select an option"
+        
+        if ($choice.ToUpper() -eq 'B') { Show-MainMenu; break }
+        if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $MenuItems.Count) {
+            $selectedIndex = [int]$choice - 1
+            $selectedItem = $MenuItems[$selectedIndex]
+            Import-RegData -regContent $selectedItem.RegContent -description $selectedItem.Description
+        } else {
+            Write-Host "Invalid choice. Please try again." -ForegroundColor Red
+            Start-Sleep -Seconds 2
+        }
+    }
+}
+function Show-PrintingMenu {
+    $MenuItems = @(
+        [pscustomobject]@{Name="Enable Chrome And Edge Printing"; RegContent=$reg_enable_edge_chorme_printing; Description="Enable Chrome And Edge Printing"}
+        [pscustomobject]@{Name="Disable Chrome And Edge Printing"; RegContent=$reg_disable_edge_chorme_printing; Description="Disable Chrome And Edge Printing"}
+    )
+
+    while ($true) {
+        Clear-Host
+        Write-Host "--- Browser Screen Capture Control ---" -ForegroundColor Yellow
+        Write-Host ""
+        for ($i = 0; $i -lt $MenuItems.Count; $i++) {
+            Write-Host "        [$($i + 1)] $($MenuItems[$i].Name)" -ForegroundColor Cyan
+        }
+        Write-Host ""
+        Write-Host "        [B] Return to Main Menu" -ForegroundColor Red
+        Write-Host ""
+
+        $choice = Read-Host "Please select an option"
+
+        if ($choice.ToUpper() -eq 'B') { Show-MainMenu; break }
+        if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $MenuItems.Count) {
+            $selectedIndex = [int]$choice - 1
+            $selectedItem = $MenuItems[$selectedIndex]
+            Import-RegData -regContent $selectedItem.RegContent -description $selectedItem.Description
+        } else {
+            Write-Host "Invalid choice. Please try again." -ForegroundColor Red
+            Start-Sleep -Seconds 2
+        }
+    }
+}
+
+function Show-ChromeClearMenu {
+    $MenuItems = @(
+        [pscustomobject]@{Name="Enable All Feature"; RegContent=$reg_ChromeEnableAllClearing; Description="Enable All Feature"}
+        [pscustomobject]@{Name="Clear Autofill form data"; RegContent=$reg_ChromeClearAutofill; Description="Clear Autofill form data"}
+        [pscustomobject]@{Name="Clear Browsing History"; RegContent=$reg_ChromeClearBrowsingHistory; Description="Clear Browsing History"}
+        [pscustomobject]@{Name="Clear Cached Images and Files"; RegContent=$reg_ChromeClearCachedImages; Description="Clear Cached Images and Files"}
+        [pscustomobject]@{Name="Clear Cookies and Other Site Data"; RegContent=$reg_ChromeClearCookies; Description="Clear Cookies and Other Site Data"}
+        [pscustomobject]@{Name="Clear Download History"; RegContent=$reg_ChromeClearDownloadHistory; Description="Clear Download History"}
+        [pscustomobject]@{Name="Clear Hosted App Data"; RegContent=$reg_ChromeClearHostedAppData; Description="Clear Hosted App Data"}
+        [pscustomobject]@{Name="Clear Passwords and Sign-in data"; RegContent=$reg_ChromeClearPasswordSignin; Description="Clear Passwords and Sign-in data"}
+        [pscustomobject]@{Name="Clear Site Settings"; RegContent=$reg_ChromeClearSiteSettings; Description="Clear Site Settings"}
+        [pscustomobject]@{Name="Disable All Clearing on Exit"; RegContent=$reg_ChromeDisableAllClearing; Description="Disable All Clearing on Exit"}
+    )
+    
+    while ($true) {
+        Clear-Host
+        Write-Host "--- Chrome Data Clearing Settings ---" -ForegroundColor Yellow
+        Write-Host ""
+        for ($i = 0; $i -lt $MenuItems.Count; $i++) {
+            Write-Host "        [$($i + 1)] $($MenuItems[$i].Name)" -ForegroundColor Cyan
+        }
+        Write-Host ""
+        Write-Host "        [B] Return to Main Menu" -ForegroundColor Red
+        Write-Host ""
+        
+        $choice = Read-Host "Please select a clearing option [1-9, B]"
+        
+        if ($choice.ToUpper() -eq 'B') { Show-MainMenu; break }
+        if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $MenuItems.Count) {
+            $selectedIndex = [int]$choice - 1
+            $selectedItem = $MenuItems[$selectedIndex]
+            Import-RegData -regContent $selectedItem.RegContent -description $selectedItem.Description
+        } else {
+            Write-Host "Invalid choice. Please try again." -ForegroundColor Red
+            Start-Sleep -Seconds 2
+        }
+    }
+}
+
+function Show-EdgeClearMenu {
+    $MenuItems = @(
+        [pscustomobject]@{Name="Enable All Feature"; RegContent=$reg_EdgeEnableAllClearing; Description="Enable All Feature"}
+        [pscustomobject]@{Name="Clear Autofill form data"; RegContent=$reg_EdgeClearAutofill; Description="Clear Autofill form data"}
+        [pscustomobject]@{Name="Clear Browsing History"; RegContent=$reg_EdgeClearBrowsingHistory; Description="Clear Browsing History"}
+        [pscustomobject]@{Name="Clear Cached Images and Files"; RegContent=$reg_EdgeClearCachedImages; Description="Clear Cached Images and Files"}
+        [pscustomobject]@{Name="Clear Cookies and Other Site Data"; RegContent=$reg_EdgeClearCookies; Description="Clear Cookies and Other Site Data"}
+        [pscustomobject]@{Name="Clear Download History"; RegContent=$reg_EdgeClearDownloadHistory; Description="Clear Download History"}
+        [pscustomobject]@{Name="Clear Hosted App Data"; RegContent=$reg_EdgeClearHostedAppData; Description="Clear Hosted App Data"}
+        [pscustomobject]@{Name="Clear Passwords and Sign-in data"; RegContent=$reg_EdgeClearPasswordSignin; Description="Clear Passwords and Sign-in data"}
+        [pscustomobject]@{Name="Clear Site Settings"; RegContent=$reg_EdgeClearSiteSettings; Description="Clear Site Settings"}
+        [pscustomobject]@{Name="Disable All Clearing on Exit"; RegContent=$reg_EdgeDisableAllClearing; Description="Disable All Clearing on Exit"}
+    )
+    
+    while ($true) {
+        Clear-Host
+        Write-Host "--- Edge Data Clearing Settings ---" -ForegroundColor Yellow
+        Write-Host ""
+        for ($i = 0; $i -lt $MenuItems.Count; $i++) {
+            Write-Host "        [$($i + 1)] $($MenuItems[$i].Name)" -ForegroundColor Cyan
+        }
+        Write-Host ""
+        Write-Host "        [B] Return to Main Menu" -ForegroundColor Red
+        Write-Host ""
+        
+        $choice = Read-Host "Please select a clearing option [1-9, B]"
+        
+        if ($choice.ToUpper() -eq 'B') { Show-MainMenu; break }
+        if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $MenuItems.Count) {
+            $selectedIndex = [int]$choice - 1
+            $selectedItem = $MenuItems[$selectedIndex]
+            Import-RegData -regContent $selectedItem.RegContent -description $selectedItem.Description
+        } else {
+            Write-Host "Invalid choice. Please try again." -ForegroundColor Red
+            Start-Sleep -Seconds 2
+        }
+    }
+}
+
+# --- Main Menu Function ---
+function Show-MainMenu {
+    Clear-Host
+    Write-Host "==============================================" -ForegroundColor Green
+    Write-Host "           Browser Policy Management Menu" -ForegroundColor Green
+    Write-Host "==============================================" -ForegroundColor Green
+    Write-Host ""
+    
+    for ($i = 0; $i -lt $MainMenuItems.Count; $i++) {
+        Write-Host "        [$($i + 1)] $($MainMenuItems[$i].Name)" -ForegroundColor Cyan
+    }
+
+    Write-Host ""
+    Write-Host "        [E] Exit" -ForegroundColor Red
+    Write-Host ""
+    
+    $choice = Read-Host "Please select a main menu option"
+
+    if ($choice.ToUpper() -eq 'E') {
+        Exit-Script
+    } elseif ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $MainMenuItems.Count) {
+        $selectedIndex = [int]$choice - 1
+        $selectedItem = $MainMenuItems[$selectedIndex]
+        Invoke-Expression $selectedItem.MenuFunction
+    } else {
+        Write-Host "Invalid choice. Please try again." -ForegroundColor Red
+        Start-Sleep -Seconds 2
+        Show-MainMenu
+    }
+}
+
+# --- Exit Script Function ---
+function Exit-Script {
+    Clear-Host
+    Write-Host "Exiting script. Goodbye!" -ForegroundColor Cyan
+    Start-Sleep -Seconds 1
+    exit
+}
+
+# Launch the menu
+Show-MainMenu
