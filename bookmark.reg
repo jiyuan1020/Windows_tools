@@ -1,0 +1,6 @@
+Windows Registry Editor Version 5.00
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome]
+"BookmarkBarEnabled"=dword:00000001
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome]
+"ManagedBookmarks"="[ { \"toplevel_name\": \"Work Platform\" }, { \"url\": \"https://ui.appen.com.cn/\", \"name\": \"A9\" } ,{ \"url\": \"https://forms.office.com/pages/responsepage.aspx?id=qszw_UYDY0uMFSG_NKYtGLzk7N_phsJPh9rBvAeLW6dUMlhaSDg3WkFXQlpJMTRYTzVJMTIyRkFZUi4u\", \"name\": \"IT Service\" }]"
