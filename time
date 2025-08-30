@@ -31,6 +31,10 @@ function Sync-WindowsTime {
     Write-Host "Setting time server to: $NtpServer" -ForegroundColor Cyan
 
     try {
+        # Ensure the Windows Time service startup type is set to Automatic
+        Write-Host "Ensuring 'Windows Time' service startup type is Automatic..."
+        Set-Service -Name "w32time" -StartupType Automatic -ErrorAction Stop
+
         # Stop the Windows Time service
         Write-Host "Stopping the Windows Time service..."
         Stop-Service -Name "w32time" -Force -ErrorAction SilentlyContinue
@@ -40,7 +44,7 @@ function Sync-WindowsTime {
 
         # Start the Windows Time service
         Write-Host "Starting the Windows Time service..."
-        Start-Service -Name "w32time"
+        Start-Service -Name "w32time" -ErrorAction Stop
         
         # Force a time resynchronization
         Write-Host "Forcing time synchronization..."
@@ -52,7 +56,9 @@ function Sync-WindowsTime {
         w32tm /query /status
 
     } catch {
-        Write-Host "An error occurred during time synchronization: $_" -ForegroundColor Red
+        Write-Host "An error occurred during time synchronization:" -ForegroundColor Red
+        Write-Host $_.Exception.Message -ForegroundColor Red
+        Write-Host "Please check if the 'Windows Time' service is not disabled." -ForegroundColor Red
         return
     }
 
